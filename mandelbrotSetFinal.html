@@ -1,0 +1,715 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+
+    <script type="text/javascript">
+        window.addEventListener("load", windowLoadHandler, false);
+
+        function windowLoadHandler() { //as soon as the window loads, calls the canvasApp function
+            canvasApp();
+        }
+
+        function canvasApp() {
+
+            //defining the two canvases for the mandelbrot and julia canvases
+            var plotCanvas = document.getElementById("plotCanvas");
+            var plotContext = plotCanvas.getContext("2d");
+            var upperCanvas = document.getElementById("upperCanvas");
+            var upperContext = upperCanvas.getContext("2d");
+            var displayWidth = plotCanvas.width;
+            var displayHeight = plotCanvas.height;
+            var juliaPlotCanvas = document.getElementById("juliaSetPlotCanvas");
+            var juliaContext = juliaPlotCanvas.getContext("2d");
+            var juliaUpperCanvas = document.getElementById("juliaUpperCanvas");
+            var juliaUpperContext = juliaUpperCanvas.getContext("2d");
+
+            //mouse event variables
+            var mouseX1; //mouse's initial x position when mouse is clicked
+            var mouseY1; //mouse's initial y position when mouse is clicked
+            var mouseX; //mouse's final x position when mouse is released
+            var mouseY; //mouse's final y position when mouse is released
+            var mouseMove = false; 
+            var zoomed = false;
+
+            //defining width and height for mandelbrot Set
+            var xMin = -2;
+            var xMax = 2;
+            var yMin = -((xMax - xMin) * displayHeight) / (2 * displayWidth);
+            var yMax = -yMin;
+
+            //defining width and height for Julia Set, in addition to the c value for the julia set
+            var juliaXMin = xMin;
+            var juliaXMax = xMax;
+            var juliaYMin = yMin;
+            var juliaYMax = yMax;
+            var a;
+            var b;
+            
+            //these are the min and max values used to scale the julia c value in pixels to the julia c value on the complex plane
+            var juliaX = 0;
+            var juliaY = 0;
+
+            //getting pixel data for both Mandelbrot and Julia set displays
+            var image = plotContext.getImageData(0, 0, displayWidth, displayHeight);
+            var pixelData = image.data;
+            var len = pixelData.length;
+
+            var juliaImage = juliaContext.getImageData(0, 0, displayWidth, displayHeight);
+            var juliaPixelData = juliaImage.data;
+            var juliaLen = juliaPixelData.length;
+
+            //defining UI elements
+            var numIterations = 100; //the number of terms that the program will go to to see if a specific sequence goes to infinity or not
+            var numSlider = document.getElementById("numSlider"); //slider to change value of numIterations
+            var mandelbrotRestoreButton = document.getElementById("mandelbrotRestore"); //button to restore the initial mandelbrot set zoom
+            var juliaRestoreButton = document.getElementById("juliaRestore"); //button to restore the initial julia set zoom
+            var aInput = document.getElementById("aInput"); //manual input for a term in c value (a + b*i) for Julia set
+            var bInput = document.getElementById("bInput"); //manual input for b term in c value (a + b*i) for Julia set
+            var submitButton = document.getElementById("submitButton"); //button to load Julia set with given a and b values
+            var mZoomOut = document.getElementById("mandelbrotZoomOut"); //zoom out button for Mandelbrot set
+            var mZoomIn = document.getElementById("mandelbrotZoomIn"); //zoom in button for Mandelbrot set
+            var jZoomOut = document.getElementById("juliaZoomOut"); //zoom out button for Julia set
+            var jZoomIn = document.getElementById("juliaZoomIn"); //zoom in button for Julia set
+
+            //setting color variables
+            var r0;
+            var g0;
+            var b0;
+            var r1;
+            var g1;
+            var b1;
+            var numSteps = 16; //number of color increments in gradient between initial color and final color
+            var buttonColorArray; //stores rgb values for initial and final colors for each gradiant option
+            var colorArray; //stores rgb values for the current colors on the mandelbrot/julia set (so the initial and final colors in the gradient, and any color in between)
+            var buttonArray; //stores the four color buttons
+            var numButtons = 4; //number of different color buttons
+
+            //declaring variables to be used as placeholders in functions shared by mandelbrot and julia sets
+            var canvas;
+            var context;
+
+            init();
+
+            function init() { //calls functions to set up the screen
+                //adding event listeners to UI objects
+                numSlider.addEventListener("mouseup", numChange, false); 
+                juliaRestoreButton.addEventListener("click", restoreJulia, false);
+                mandelbrotRestoreButton.addEventListener("click", restoreMandelbrot, false);
+                upperCanvas.addEventListener("mousedown", mouseDownHandler, true);
+                juliaUpperCanvas.addEventListener("mousedown", juliaMouseDownHandler, true);
+                submitButton.addEventListener("click", newCValue, true);
+                aInput.addEventListener("keypress", onInput, false);
+                bInput.addEventListener("keypress", onInput, false);
+                mZoomIn.addEventListener("click", zoomMandelbrot, false);
+                mZoomOut.addEventListener("click", zoomMandelbrot, false);
+                jZoomIn.addEventListener("click", zoomJulia, false);
+                jZoomOut.addEventListener("click", zoomJulia, false);
+
+                //setting up colors
+                setUpButtonColorArray();
+                setUpColorArray();
+                
+                //drawing each set
+                plotMandelbrotSet();
+                plotJuliaSet();
+                
+                //sets up color buttons
+                drawButtons();
+            }
+            
+            //Functions Used for Setting up Colors:
+            
+            function setUpButtonColorArray(){ //defines the buttonColorArray as well as defines the default gradient colors
+                buttonColorArray = [255, 204, 204, 102, 0, 51, 204, 229, 255, 0, 0, 102, 255, 161, 127, 0, 34, 62, 67, 206, 162, 24, 90, 157];
+                r0 = buttonColorArray[0];
+                g0 = buttonColorArray[1];
+                b0 = buttonColorArray[2];
+                r1 = buttonColorArray[3];
+                g1 = buttonColorArray[4];
+                b1 = buttonColorArray[5];
+            }
+            
+            //this sets the values of the color array, which is used in plotJulia and plotMandelbrot to set the color of each point based on how long it takes for it to escape the while loop that tests for infinity
+            function setUpColorArray(){
+                colorArray = [];
+                var dr = (r1 - r0)/(numSteps - 1);
+                var dg = (g1 - g0)/(numSteps - 1);
+                var db= (b1 - b0)/(numSteps - 1);
+                for(var i = 0; i < numSteps; i++){
+                    var color = {
+                        red: r0 + (dr * i),
+                        green: g0 + (dg * i),
+                        blue: b0 + (db * i),
+                    }
+                    colorArray.push(color);
+                }
+                for(var j = 1; j < (numSteps - 1); j++){
+                    var color = {
+                        red: r1 - (dr * j),
+                        green: g1 - (dg * j),
+                        blue: b1 - (db * j),
+                    }
+                    colorArray.push(color);
+                }
+            }
+            
+            function drawButtons(){ //creates and draws the different color buttons, and stores them in the buttonArray
+                buttonArray = [];
+                for (var i = 0; i < numButtons; i ++){
+                    var button = document.createElement("INPUT");
+                    button.type = "button";
+                    button.style.width = "40px";
+                    button.style.height = "40px";
+                    button.style.backgroundImage = "-webkit-linear-gradient(left, rgba(" + buttonColorArray[0 + 6*i] + ", " + buttonColorArray[1 + 6*i] + ", " + buttonColorArray[2 + 6*i] + ", 1), rgba(" + buttonColorArray[3 + 6*i] + ", " + buttonColorArray[4 + 6*i] + ", " + buttonColorArray[5 + 6*i]  + ", 1)";
+                    button.style.borderRadius = "5px";
+                    button.style.border = "5px";
+                    button.style.margin = "5px";
+                    button.addEventListener("click", colorChange, false);
+                    var panel = document.getElementById("panel");
+                    panel.appendChild(button);
+                    buttonArray[i] = button;
+                }
+            }
+            
+            //Functions that draw the Mandelbrot and Julia Sets
+
+            //this draws the mandelBrot set 
+            function plotMandelbrotSet() {
+                for (var i = 0; i < len; i = i + 4) { //goes through each pixel in the mandelbrot set canvas
+                    //getting the x and y position of the pixel
+                    var x = (i/4) % displayWidth;
+                    var y = Math.floor(i / (4 * displayWidth));
+
+                    //converting the pixel coordinates to a point on the complex plane
+                    var scaledX = xToScale(x, xMin, xMax);
+                    var scaledY = yToScale(y, yMin, yMax);
+                    var n = 0;
+                    var a = scaledX;
+                    var b = scaledY;
+                    var newA;
+
+                    //checking to see if complex number causes mandelbrot set to go to infinity
+                    while (n < numIterations) {
+                        newA = (a * a) - (b * b) + scaledX;
+                        b = (2 * a * b) + scaledY;
+                        a = newA;
+
+                        if ((a * a) + (b * b) > 4) {
+                            break;
+                        }
+
+                        n++;
+                    }
+                    
+                    //colors a point black if its respective complex number causes set to remain bounded     
+                    if (n == numIterations) {
+                        pixelData[i] = 0; //red
+                        pixelData[i + 1] = 0; //green
+                        pixelData[i + 2] = 0; //blue
+                    }
+
+                    //colors a point that causes set to go to infinity based on how long it took to escape the bound
+                    else {
+                        //adds an extra iteration to smooth out coloring even more
+                        newA = (a * a) - (b * b) + scaledX;
+                        b = (2 * a * b) + scaledY;
+                        a = newA;
+                        n++;
+                        
+                        //math for gradient coloring
+                        var modulus = Math.sqrt (a*a + b*b);
+                        var mu = n - (Math.log (Math.log (modulus)))/ Math.log (2.0);
+                        var j = (mu % numSteps);
+                        var w = 1 - (2/numSteps) * Math.abs(j - (numSteps)/2);
+                        pixelData[i] = r0 + w * (r1 - r0); //red
+                        pixelData[i + 1] = g0 + w * (g1 - g0); //green
+                        pixelData[i + 2] = b0 + w * (b1 - b0); //blue
+                    }
+
+                    pixelData[i + 3] = 255; //alpha
+
+                }
+                plotContext.putImageData(image, 0, 0);
+            }
+
+            //draws the julia set
+            function plotJuliaSet() {
+                if (!(isNaN(parseFloat(juliaX)))){ //defines the a value to be the x position of the mouse on the mandelbrot coordinates if the user clicked on the Mandelbrot set (juliaX defined in mouseUpHandler)
+                    a = parseFloat(juliaX)
+                }
+                if(aInput.value != a){ //defines the a value to be the value in the aInput text box
+                    aInput.value = a.toFixed(3);
+                }
+                if (!(isNaN(parseFloat(juliaY)))){ //defines teh b value to be the y position of the mouse on the mandelbrot coordinates if the user clicked on the Mandelbrot set (juliaY defined in mouseUpHandler)
+                    b = parseFloat(juliaY);
+                }
+                if(bInput.value != b){ //defines the b value to be the value in the bInput text box
+                    bInput.value = b.toFixed(3);
+                }
+                
+                //goes through all pixels in the Julia set canvas
+                for (var i = 0; i < juliaLen; i = i + 4) {
+                    //getting the x and y position of the pixel
+                    var x = (i/4) % displayWidth;
+                    var y = Math.floor(i / (4 * displayWidth));
+
+                    //converting the pixel to a point on the complex plane
+                    var scaledX = xToScale(x, juliaXMin, juliaXMax);
+                    var scaledY = yToScale(y, juliaYMin, juliaYMax);
+                    var n = 0;
+                    var newX;
+
+                    //checking to see if initial number causes julia set to go to infinity
+                    while (n < numIterations) {
+                        newX = (scaledX * scaledX) - (scaledY * scaledY) + a;
+                        scaledY = (2 * scaledX * scaledY) + b;
+                        scaledX = newX;
+
+                        if ((scaledX * scaledX) + (scaledY * scaledY) > 4) {
+                            break;
+                        }
+
+                        n++;
+                    }
+                
+
+                    //colors a point black if its respective complex number causes set to remain bounded     
+                    if (n == numIterations) {
+                        juliaPixelData[i] = 0; //red
+                        juliaPixelData[i + 1] = 0; //green
+                        juliaPixelData[i + 2] = 0; //blue
+                    }
+
+                    //colors a point that causes set to go to infinity based on how long it took to escape the bound
+                    else {
+                        //added an extra iteration just to smooth out coloring even more
+                        newX = (scaledX * scaledX) - (scaledY * scaledY) + a;
+                        scaledY = (2 * scaledX * scaledY) + b;
+                        scaledX = newX;
+                        n++;
+                        var modulus = Math.sqrt (scaledX*scaledX + scaledY*scaledY);
+                        var mu = n - (Math.log (Math.log (modulus)))/ Math.log (2.0);
+                        var j = (mu % numSteps);
+                        var w = 1 - (2/numSteps) * Math.abs(j - (numSteps)/2);
+                        juliaPixelData[i] = r0 + w * (r1 - r0); //red
+                        juliaPixelData[i + 1] = g0 + w * (g1 - g0); //green
+                        juliaPixelData[i + 2] = b0 + w * (b1 - b0); //blue
+                    }
+
+                    juliaPixelData[i + 3] = 255; //alpha
+
+                }
+                juliaContext.putImageData(juliaImage, 0, 0);
+            }
+
+            //converts a pixel x value to a value on the complex plane
+            function xToScale(_x, min, max) {
+                return ((_x / displayWidth) * (max - min)) + min;
+            }
+
+            //converts a pixel y value to a value on the complex plane
+            function yToScale(_y, min, max) {
+                return (((_y / displayHeight) * (max - min)) + min);
+            }
+
+            //Mouse Event Handlers:
+
+            //called if user clicks on mandelBrot set, gets the initial mouse position, and enables new event listeners (mousemove and mouseup)
+            function mouseDownHandler(evt) {
+                canvas = upperCanvas;
+                context = upperContext;
+                getOriginalMousePosition(evt);
+                evt.preventDefault();
+                upperCanvas.addEventListener("mousemove", mouseMoveHandler, true);
+                window.addEventListener("mouseup", mouseUpHandler, true);
+            }
+
+            //called if user clicks on julia set, gets initial mouse position and adds new event listeners (mousemove and mouseup)
+            function juliaMouseDownHandler(evt) {
+                canvas = juliaUpperCanvas;
+                context = juliaUpperContext;
+                getOriginalMousePosition(evt);
+                evt.preventDefault();
+                juliaUpperCanvas.addEventListener("mousemove", mouseMoveHandler, true);
+                window.addEventListener("mouseup", juliaMouseUpHandler, true);
+
+            }
+
+            //called if user moves the mouse on either the julia or mandelbrot canvas while it is pressed down - calls necessary functions to draw the 'zoom in' rectangle to the screen and indicates that the mouse was moved
+            function mouseMoveHandler(evt) {
+                mouseMove = true;
+                clearCanvas();
+                getMousePosition(evt);
+                drawRectangle();
+            }
+            
+            //called when user lifts up mouse on mandelbrot set
+            function mouseUpHandler(evt) {
+                upperCanvas.removeEventListener("mousemove", mouseMoveHandler, true);
+                window.removeEventListener("mouseup", mouseUpHandler, true);
+                
+                //this zooms in if the user moved their mouse while it was pressed
+                if (mouseMove == true) {
+                    //this zooms in if the user has dragged the mouse to create a zoom in window
+                    clearCanvas();
+                    zoom(xMin, xMax, yMin, yMax, false)
+                } 
+                
+                //this plots a new julia set if the user just clicked on the mandelbrot set
+                else {
+                    //this plots the julia set for a specific c value on the mandelbrot set if the user has just clicked the window, and not dragged the mouse at all
+                    //resets zoom window when the user creates a new julia set
+                    juliaXMin = -2;
+                    juliaXMax = 2;
+                    juliaYMin = -((juliaXMax - juliaXMin) * displayHeight) / (2 * displayWidth);
+                    juliaYMax = -juliaYMin;
+                    juliaX = xToScale(mouseX1, xMin, xMax);
+                    juliaY = yToScale(mouseY1, yMin, yMax);
+                    plotJuliaSet();
+                }
+                mouseMove = false
+            }
+
+            //this zooms in once the user has lifted up their mouse on the julia Set canvas
+            function juliaMouseUpHandler() {
+                juliaUpperCanvas.removeEventListener("mousemove", mouseMoveHandler, true);
+                window.removeEventListener("mouseup", juliaMouseUpHandler, true);
+
+                if (mouseMove == true) {
+                    //this zooms in if the user has dragged the mouse to create a zoom in window
+                    clearCanvas();
+                    zoom(juliaXMin, juliaXMax, juliaYMin, juliaYMax, true)
+                }
+                mouseMove = false
+            }
+
+            //Functions Used by Mouse Event Handlers to Zoom In:
+
+            //gets the original x and y value when a user clicks, to be used to zoom into a rectangle the user has created OR to select a new c value for the julia set
+            function getOriginalMousePosition(evt) {
+                var bRect = canvas.getBoundingClientRect();
+                mouseX1 = (evt.clientX - bRect.left) * (canvas.width / bRect.width);
+                mouseY1 = (evt.clientY - bRect.top) * (canvas.height / bRect.height);
+            }
+
+            //gets the final mouse position of the user when they release the mouse, used to zoom into a rectangle that the user has created
+            function getMousePosition(evt) {
+                var bRect = canvas.getBoundingClientRect();
+                mouseX = (evt.clientX - bRect.left) * (canvas.width / bRect.width);
+                mouseY = (evt.clientY - bRect.top) * (canvas.height / bRect.height);
+            }
+
+            //draws a rectangle on the upper canvas that shows the user their zoom window, called everytime the mouse moves while it is pressed on either canvas
+            function drawRectangle() {
+                var width = mouseX - mouseX1;
+                var height = mouseY - mouseY1;
+                context.strokeStyle = "#FFFFFF";
+                context.strokeRect(mouseX1, mouseY1, width, height);
+            }
+
+            //clears the canvas once the user has selected a zoom in screen to get rid of zoom rectangle
+            function clearCanvas() {
+                context.clearRect(0, 0, displayWidth, displayHeight);
+            }
+
+            //selects new minimum and maximum window values and redraws the mandelbrot/julia set accordingly when the user releases their mouse
+            function zoom(xmin, xmax, ymin, ymax, julia) {
+                zoomed = true;
+                var windowWidth = Math.abs(mouseX1 - mouseX);
+                var windowHeight = Math.abs(mouseY1 - mouseY);
+                var centerX = (mouseX1 + mouseX) / 2
+                var centerY = (mouseY1 + mouseY) / 2
+
+                var newXMin;
+                var newXMax;
+                var newYMin;
+                var newYMax;
+                
+                //these scale the new zoom in window to the canvas, making sure that the section the user has zoomed in on will all be shown, but including extra surrounding area if the user's box does not scale to the dimensions of the canvas
+                if ((windowWidth / displayWidth) > (windowHeight / displayHeight)) {
+                    newXMin = xToScale(centerX - (windowWidth / 2), xmin, xmax);
+                    newXMax = xToScale(centerX + (windowWidth / 2), xmin, xmax);
+                    newYMin = yToScale(centerY, ymin, ymax) - (((Math.abs(newXMin - newXMax)) * displayHeight) / (2 * displayWidth)) / 2;
+                    newYMax = yToScale(centerY, ymin, ymax) + ((((Math.abs(newXMin - newXMax)) * displayHeight) / (2 * displayWidth)));
+                } else if ((windowWidth / displayWidth) < (windowHeight / displayHeight)) {
+                    newYMin = yToScale(centerY - (windowHeight / 2), ymin, ymax);
+                    newYMax = yToScale(centerY + (windowHeight / 2), ymin, ymax);
+                    newXMin = xToScale(centerX, xmin, xmax) - (((Math.abs(newYMin - newYMax)) * displayWidth) / (2 * displayHeight));
+                    newXMax = xToScale(centerX, xmin, xmax) + (((Math.abs(newYMin - newYMax)) * displayWidth) / (2 * displayHeight));
+                }
+
+                if (!julia) { //if we're zooming in on the mandelbrot set
+                    xMin = newXMin;
+                    xMax = newXMax;
+                    yMin = newYMin;
+                    yMax = newYMax;
+                    
+                    console.log(xMax, xMin, yMax, yMin);
+
+                    plotMandelbrotSet();
+                } 
+                else if (julia) { //if we're zooming in on the julia set
+                    juliaXMin = newXMin;
+                    juliaXMax = newXMax;
+                    juliaYMin = newYMin;
+                    juliaYMax = newYMax;
+
+                    plotJuliaSet();
+                }
+            }
+
+            //Functions Called w/ UI Buttons/Sliders:
+
+            //redraws the Mandelbrot/Julia sets if the user changes the numIterations
+            function numChange(evt) {
+                numIterations = numSlider.value;
+                plotMandelbrotSet();
+                plotJuliaSet();
+            }
+
+            //resets original window of julia set
+            function restoreJulia(evt) {
+                juliaXMin = -2;
+                juliaXMax = 2;
+                juliaYMin = -((juliaXMax - juliaXMin) * displayHeight) / (2 * displayWidth);
+                juliaYMax = -juliaYMin;
+
+                plotJuliaSet();
+            }
+
+            //resets original window of Mandelbrot Set
+            function restoreMandelbrot(evt) {
+                xMin = -2;
+                xMax = 2;
+                yMin = -((xMax - xMin) * displayHeight) / (2 * displayWidth);
+                yMax = -yMin;
+
+                plotMandelbrotSet();
+            }
+            
+            //Makes sure user hasn't entered invalid text in the Julia set boxes (i.e. letters, punctuation). Also submits new C values or switches to the next textbox if user hits enter.
+            function onInput(evt){
+                var firstTextbox = document.getElementById(evt.target.id)
+                console.log(evt.keyCode);
+                if (evt.keyCode == 13){
+                    if(firstTextbox == aInput){
+                        bInput.focus();
+                        bInput.select();
+                    }
+                    else if (firstTextbox == bInput){
+                        newCValue(evt);
+                    }
+                }
+                else if (58 <= evt.keyCode || 44 >= evt.keyCode || evt.keyCode == 47){
+                    evt.preventDefault();
+                    var textbox = document.getElementById(evt.target.id);
+                    textbox.value = firstTextbox.value + "";
+                } 
+                else if (evt.keyCode == 46 || evt.keyCode == 45){
+                    if( evt.keyCode == 46 && firstTextbox.value.indexOf(".") > -1){
+                        evt.preventDefault();
+                        var textbox = document.getElementById(evt.target.id);
+                        textbox.value = firstTextbox.value + ""; 
+                    }
+                    
+                    if(evt.keyCode == 45 && firstTextbox.value.indexOf("-") > -1){
+                        evt.preventDefault();
+                        var textbox = document.getElementById(evt.target.id);
+                        textbox.value = firstTextbox.value + ""; 
+                    }
+                }
+            }
+            
+            //sets a new C value if user enters one
+            function newCValue(evt){
+                juliaX = aInput.value;
+                juliaY = bInput.value;
+                plotJuliaSet();
+            }
+            
+            //when mandelbrot zoom in or out button is pressed, changes xMin/xMax/yMin/yMax values for mandelbrot set and redraws it
+            function zoomMandelbrot(evt){
+                if(document.getElementById(evt.target.id) == mZoomOut){ //if the user clicked the zoom out button
+                    var zoomFactor = 1.2; 
+                }
+                else{ //if the user clicked the zoom in button
+                    var zoomFactor = .8; 
+                }
+                
+                var centerX = ((xMax + xMin)/2);
+                var centerY = (yMax + yMin)/2;
+                var width = Math.abs(xMax - xMin);
+                
+                xMin = centerX - (zoomFactor * (width/2));
+                xMax = centerX + (zoomFactor * (width/2));
+                yMin = centerY - ((Math.abs(xMax - xMin) * displayHeight) / (2 * displayWidth));
+                yMax = centerY + ((Math.abs(xMax - xMin) * displayHeight) / (2 * displayWidth));
+                
+                plotMandelbrotSet();
+            }
+            
+            //when julia zoom in or out button is pressed, changes xMin/xMax/yMin/yMax values for julia set and redraws it
+            function zoomJulia(evt){ 
+                if(document.getElementById(evt.target.id) == jZoomOut){ //if zooming out
+                    var zoomFactor = 1.2
+                }
+                else{
+                    var zoomFactor = .8 //if zooming in
+                }
+                
+                var centerX = ((juliaXMax + juliaXMin)/2);
+                var centerY = (juliaYMax + juliaYMin)/2;
+                var width = Math.abs(juliaXMax - juliaXMin);
+                
+                juliaXMin = centerX - (zoomFactor * (width/2));
+                juliaXMax = centerX + (zoomFactor * (width/2));
+                juliaYMin = centerY - ((Math.abs(juliaXMax - juliaXMin) * displayHeight) / (2 * displayWidth));
+                juliaYMax = centerY + ((Math.abs(juliaXMax - juliaXMin) * displayHeight) / (2 * displayWidth));
+                
+                plotJuliaSet();
+            }
+            
+            //changes color values and redraws mandelbrot/julia sets when one of the color buttons is pressed
+            function colorChange(evt){
+                evt.preventDefault();
+                for (var i = 0; i < numButtons; i ++){
+                    if (evt.target == buttonArray[i]){
+                        r0 = buttonColorArray[0 + 6*i];
+                        g0 = buttonColorArray[1 + 6*i];
+                        b0 = buttonColorArray[2 + 6*i];
+                        r1 = buttonColorArray[3 + 6*i];
+                        g1 = buttonColorArray[4 + 6*i];
+                        b1 = buttonColorArray[5 + 6*i];
+                        plotMandelbrotSet();
+                        plotJuliaSet();
+                    }
+                }
+            }
+        }
+        
+    </script>
+
+    <title>Mandelbrot Set</title>
+
+    <style type="text/css">
+        body {
+            background-color: #ffffff;
+            color: #000000;
+            font-family: inherit;
+        }
+        
+        p {
+            color: #000000;
+            font-size: 14px;
+        }
+        
+        h2 {
+            color: #000000;
+            font-size: 36px;
+            align-content: center;
+            text-indent: 260px;
+            font-family: "Times New Roman", Times, sans-serif;
+        }
+        
+        label {}
+        
+        #caption {
+            position: absolute;
+            width: 520px;
+            text-align: center;
+            top: 500px;
+            z-index: 1
+        }
+        
+        a {
+            color: #d15423;
+            text-decoration: none;
+        }
+        
+        #plotCanvas {
+            position: absolute;
+            z-index: 0;
+        }
+        
+        #upperCanvas {
+            position: absolute;
+            z-index: 1;
+        }
+        
+        #juliaSetPlotCanvas {
+            position: relative;
+            z-index: 0;
+        }
+        
+        #juliaUpperCanvas {
+            position: absolute;
+            z-index: 1;
+        }
+        
+        #container {
+            margin: auto;
+            position: relative;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        
+        #juliaContainer {
+            clear: both;
+            position: relative;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        
+        #panel {
+            width: 300px;
+            height: 520px;
+            float: right;
+            top: 20;
+        }
+    </style>
+
+</head>
+
+<body>
+    <div id="panel">
+        <label for=numSlider>Number of Iterations:</label>
+        <br/>
+        0
+        <input type="range" id=numSlider min=0 value=100 max=1000 step=1>1000
+        <br/>
+        <br/>
+        <button id="mandelbrotRestore">Restore Original Mandelbrot Set</button>
+        <br/>
+        <br/>
+        <button id="juliaRestore">Restore Original Julia Set</button>
+        <br/>
+        <br/>
+        Julia Set: c = <input type = "text" id = "aInput" size = "5px" value="0.000" > + <input type="text" id = "bInput" size = "5px" value = "0.000" > i    
+        <input type="submit" value="Submit" id = "submitButton">
+        <br/>
+        <br/>
+        Mandelbrot Set Zoom: <input type = "button" value = "+" id = "mandelbrotZoomIn">  <input type = "button" value = "-" id = "mandelbrotZoomOut">
+        <br/>
+        <br/>
+        Julia Set Zoom: <input type = "button" value = "+" id = "juliaZoomIn">  <input type = "button" value = "-" id = "juliaZoomOut">
+        <br/>
+        <br/>
+        Gradient Colors:
+        <br/>
+    </div>
+    <div id="container">
+        <canvas id="upperCanvas" width="600px" height="340px">
+            Your browser does not support HTML5 canvas.
+        </canvas>
+        <canvas id="plotCanvas" width="600px" height="340px"></canvas>
+    </div>
+    <div id="juliaContainer">
+        <canvas id="juliaUpperCanvas" width="600px" height="340px"></canvas>
+        <canvas id="juliaSetPlotCanvas" width="600px" height="340px"></canvas>
+    </div>
+</body>
+<br/>
+
+</html>
